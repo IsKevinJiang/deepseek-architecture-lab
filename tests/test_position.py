@@ -70,3 +70,87 @@ def test_rotary_embedding_uses_nonpersistent_buffers_not_parameters():
 def test_rotary_embedding_rejects_odd_dimension():
     with pytest.raises(ValueError, match="even"):
         RotaryEmbedding(dim=7, max_seq_len=4)
+
+
+def test_rotary_forward_position_zero_is_identity_with_different_head_counts():
+    rotary = RotaryEmbedding(dim=8, max_seq_len=4)
+    query = torch.randn(2, 3, 1, 8)
+    key = torch.randn(2, 1, 1, 8)
+
+    rotated_query, rotated_key = rotary(query, key)
+
+    torch.testing.assert_close(rotated_query, query)
+    torch.testing.assert_close(rotated_key, key)
+
+
+def test_rotary_forward_matches_cached_formula_with_position_offset():
+    rotary = RotaryEmbedding(dim=8, max_seq_len=6)
+    query = torch.randn(1, 2, 3, 8)
+    key = torch.randn(1, 2, 3, 8)
+    offset = 2
+    cosine = rotary.cos_rot[2:5].unsqueeze(0).unsqueeze(0)
+    sine = rotary.sin_rot[2:5].unsqueeze(0).unsqueeze(0)
+    expected_query = query * cosine + rotate_half(query) * sine
+    expected_key = key * cosine + rotate_half(key) * sine
+
+    actual_query, actual_key = rotary(
+        query,
+        key,
+        offset=offset,
+    )
+
+    torch.testing.assert_close(actual_query, expected_query)
+    torch.testing.assert_close(actual_key, expected_key)
+
+
+def test_rotary_forward_preserves_shapes_dtypes_and_vector_magnitudes():
+    rotary = RotaryEmbedding(dim=8, max_seq_len=4)
+    query = torch.randn(2, 3, 4, 8).to(torch.bfloat16)
+    key = torch.randn(2, 1, 4, 8).to(torch.bfloat16)
+
+    rotated_query, rotated_key = rotary(query, key)
+
+    assert rotated_query.shape == query.shape
+    assert rotated_key.shape == key.shape
+    assert rotated_query.dtype == query.dtype
+    assert rotated_key.dtype == key.dtype
+    torch.testing.assert_close(
+        rotated_query.float().norm(dim=-1),
+        query.float().norm(dim=-1),
+        rtol=1e-2,
+        atol=1e-2,
+    )
+    torch.testing.assert_close(
+        rotated_key.float().norm(dim=-1),
+        key.float().norm(dim=-1),
+        rtol=1e-2,
+        atol=1e-2,
+    )
+
+
+def test_rotary_forward_rejects_wrong_feature_dimension():
+    rotary = RotaryEmbedding(dim=8, max_seq_len=4)
+    query = torch.randn(1, 2, 4, 6)
+    key = torch.randn(1, 2, 4, 8)
+
+    with pytest.raises(ValueError):
+        rotary(query, key)
+
+
+def test_rotary_forward_rejects_mismatched_sequence_lengths():
+    rotary = RotaryEmbedding(dim=8, max_seq_len=4)
+    query = torch.randn(1, 2, 3, 8)
+    key = torch.randn(1, 2, 4, 8)
+
+    with pytest.raises(ValueError):
+        rotary(query, key)
+
+
+@pytest.mark.parametrize("offset", [-1, 3])
+def test_rotary_forward_rejects_positions_outside_cache(offset):
+    rotary = RotaryEmbedding(dim=8, max_seq_len=4)
+    query = torch.randn(1, 2, 2, 8)
+    key = torch.randn(1, 2, 2, 8)
+
+    with pytest.raises(ValueError):
+        rotary(query, key, offset=offset)
