@@ -56,3 +56,21 @@ def test_rmsnorm_produces_finite_gradients():
     assert norm.weight.grad is not None
     assert torch.isfinite(input_tensor.grad).all()
     assert torch.isfinite(norm.weight.grad).all()
+
+
+def test_rmsnorm_preserves_bfloat16_dtype_and_matches_float32_reference():
+    torch.manual_seed(0)
+    norm = RMSNorm(8)
+    input_float32 = torch.randn(2, 3, 8)
+    input_bfloat16 = input_float32.to(torch.bfloat16)
+
+    expected = norm(input_float32)
+    actual = norm(input_bfloat16)
+
+    assert actual.dtype == torch.bfloat16
+    torch.testing.assert_close(
+        actual.float(),
+        expected,
+        rtol=1e-2,
+        atol=1e-2,
+    )
