@@ -3,6 +3,7 @@ import torch
 import torch.nn as nn
 
 from deepseek_lab.model import Model
+from deepseek_lab.normalization import RMSNorm
 from deepseek_lab.transformer_block import TransformerBlock
 
 
@@ -105,3 +106,25 @@ def test_model_produces_finite_gradients_for_all_parameters():
     for parameter in model.parameters():
         assert parameter.grad is not None
         assert torch.isfinite(parameter.grad).all()
+
+
+def test_model_initializes_linear_and_embedding_weights_with_expected_normal_distribution():
+    torch.manual_seed(0)
+    model = make_tiny_model()
+    initialized_weights = []
+
+    for module in model.modules():
+        if isinstance(module, (nn.Linear, nn.Embedding)):
+            initialized_weights.append(module.weight.detach().flatten())
+
+    all_weights = torch.cat(initialized_weights)
+    assert abs(all_weights.mean().item()) < 0.003
+    assert abs(all_weights.std().item() - 0.02) < 0.003
+
+
+def test_model_initializes_every_rmsnorm_weight_to_one():
+    model = make_tiny_model()
+
+    for module in model.modules():
+        if isinstance(module, RMSNorm):
+            torch.testing.assert_close(module.weight, torch.ones_like(module.weight))

@@ -23,9 +23,17 @@ class Model(nn.Module):
         self.vocab_size = vocab_size
         self.num_layers = num_layers
 
+        self.apply(self.init_weights)
+
     def forward(self, x, offset=0):
         x = self.embedding(x)
         for block in self.transformer_blocks:
             x = block(x, offset)
         x = self.linear(self.rmsnorm(x))
         return x
+
+    def init_weights(self, m, mean=0, std=0.02):
+        if isinstance(m, nn.Linear) or isinstance(m, nn.Embedding):
+            nn.init.normal_(m.weight, mean, std)
+        if isinstance(m, RMSNorm):
+            nn.init.ones_(m.weight)
