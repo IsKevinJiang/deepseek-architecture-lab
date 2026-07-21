@@ -4,7 +4,7 @@ from deepseek_lab.feed_forward import SwiGLU
 
 
 def test_swiglu_preserves_leading_dimensions_and_hidden_size():
-    module = SwiGLU(hidden_size=8, intermediate_size=16)
+    module = SwiGLU(hidden_dim=8, intermediate_dim=16)
     input_tensor = torch.randn(2, 3, 8)
 
     output = module(input_tensor)
@@ -13,7 +13,7 @@ def test_swiglu_preserves_leading_dimensions_and_hidden_size():
 
 
 def test_swiglu_uses_three_bias_free_projections():
-    module = SwiGLU(hidden_size=4, intermediate_size=6)
+    module = SwiGLU(hidden_dim=4, intermediate_dim=6)
 
     assert module.gate_proj.bias is None
     assert module.up_proj.bias is None
@@ -24,7 +24,7 @@ def test_swiglu_uses_three_bias_free_projections():
 
 
 def test_swiglu_matches_known_values():
-    module = SwiGLU(hidden_size=2, intermediate_size=2)
+    module = SwiGLU(hidden_dim=2, intermediate_dim=2)
     identity = torch.eye(2)
 
     with torch.no_grad():
@@ -41,7 +41,7 @@ def test_swiglu_matches_known_values():
 
 
 def test_swiglu_produces_finite_gradients_for_input_and_all_weights():
-    module = SwiGLU(hidden_size=8, intermediate_size=16)
+    module = SwiGLU(hidden_dim=8, intermediate_dim=16)
     input_tensor = torch.randn(2, 3, 8, requires_grad=True)
 
     loss = module(input_tensor).sum()

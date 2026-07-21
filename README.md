@@ -102,7 +102,7 @@ Pipeline design:
 
 ### Phase 1 — Dense baseline
 
-- [ ] Implement causal attention, RMSNorm, SwiGLU, RoPE, and residual blocks
+- [x] Implement causal attention, RMSNorm, SwiGLU, RoPE, and residual blocks
 - [ ] Validate initialization and parameter counts
 - [ ] Pass single-batch overfitting
 - [ ] Pass tiny-corpus sampling test
