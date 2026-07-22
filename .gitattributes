@@ -1,0 +1,14 @@
+# Keep repository text files consistent across Windows and WSL.
+* text=auto eol=lf
+
+# Never apply text line-ending conversion to binary artifacts.
+*.bin binary
+*.npy binary
+*.npz binary
+*.pt binary
+*.pth binary
+*.png binary
+*.jpg binary
+*.jpeg binary
+*.gif binary
+*.pdf binary
