@@ -96,13 +96,17 @@ class ShardDataLoader:
 
     def next_batch(self):
         batch = self.batch_size * self.sequence_length + 1
+        shards_tried = 0
         while (len(self.tokens) - self.position < batch):
+            if shards_tried >= len(self.shards):
+                raise ValueError(f"No shard contains enough tokens for a batch of size {batch}")
             next_shard = (self.current_shard + 1) % len(self.shards)
             if (next_shard == 0):
                 self.epoch += 1
                 if (self.split == "train"):
                     self.rng.shuffle(self.shards)
             self._load_shard(next_shard)
+            shards_tried += 1
 
         window = self.tokens[self.position: self.position + batch]
         inputs = torch.tensor(window[:len(window)-1], dtype=torch.long).reshape(self.batch_size, self.sequence_length)
