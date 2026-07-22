@@ -53,7 +53,7 @@ class ShardWriter:
         self.flush()
 
 class ShardDataLoader:
-    def __init__(self, data_dir, batch_size, sequence_length, split, seed=None):
+    def __init__(self, data_dir, batch_size, sequence_length, split, seed=32):
         self.position = 0
         self.current_shard = 0
         self.batch_size = batch_size
@@ -74,7 +74,7 @@ class ShardDataLoader:
 
         if not self.shards:
             raise ValueError("No shards found")
-
+        #Reshuffling helps with training so model doesn't see the same stuff in the same order
         if self.split == "train":
             self.rng.shuffle(self.shards)
         self._load_shard(0)
@@ -97,8 +97,13 @@ class ShardDataLoader:
     def next_batch(self):
         batch = self.batch_size * self.sequence_length + 1
         while (len(self.tokens) - self.position < batch):
-            self._load_shard((self.current_shard + 1) % len(self.shards))
-            
+            next_shard = (self.current_shard + 1) % len(self.shards)
+            if (next_shard == 0):
+                self.epoch += 1
+                if (self.split == "train"):
+                    self.rng.shuffle(self.shards)
+            self._load_shard(next_shard)
+
         window = self.tokens[self.position: self.position + batch]
         inputs = torch.tensor(window[:len(window)-1], dtype=torch.long).reshape(self.batch_size, self.sequence_length)
         outputs = torch.tensor(window[1:], dtype=torch.long).reshape(self.batch_size, self.sequence_length)
