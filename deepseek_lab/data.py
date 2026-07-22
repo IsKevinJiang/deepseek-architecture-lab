@@ -111,4 +111,43 @@ class ShardDataLoader:
 
         return inputs, outputs
 
+    def state_dict(self):
+        state_dict = {
+            "epoch": self.epoch,
+            "current_shard": self.current_shard,
+            "token_position": self.position,
+            "rng_state": self.rng.bit_generator.state,
+            "split": self.split,
+            "batch_size": self.batch_size,
+            "sequence_length" : self.sequence_length,
+            "shard_names": [shard.name for shard in self.shards]
+        }
+
+        return state_dict
+
+    def load_state_dict(self, state):
+        if (self.split != state["split"] or self.batch_size != state["batch_size"] or self.sequence_length != state["sequence_length"]):
+            raise ValueError("Split, batch size, or sequence length seems to mismatch this loader")
+        
+        self.shards =  [self.file_path / name for name in state["shard_names"]]
+        if not self.shards:
+            raise ValueError("Checkpoint has no shards")
+        missing_shards = [path for path in self.shards if not path.is_file()]
+        if missing_shards:
+            raise FileNotFoundError(f"Missing shard files: {missing_shards}")
+
+        current_shard = state["current_shard"]
+        if not 0 <= current_shard < len(self.shards):
+            raise ValueError("Saved current shard index is invalid")
+        self._load_shard(current_shard)
+
+        token_position = state["token_position"]
+        if not 0 <= token_position <= len(self.tokens):
+            raise ValueError("Saved token position is invalid")
+        self.position = token_position
+
+        self.epoch = state["epoch"]
+        self.rng.bit_generator.state = state["rng_state"]
+
+
 
