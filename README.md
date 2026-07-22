@@ -103,15 +103,15 @@ Pipeline design:
 ### Phase 1 — Dense baseline
 
 - [x] Implement causal attention, RMSNorm, SwiGLU, RoPE, and residual blocks
-- [ ] Validate initialization and parameter counts
-- [ ] Pass single-batch overfitting
-- [ ] Pass tiny-corpus sampling test
+- [x] Validate initialization and parameter counts
+- [x] Pass single-batch overfitting
+- [x] Pass tiny-corpus sampling test
 
 ### Phase 2 — Data and training engine
 
-- [ ] Build offline tokenization and binary sharding
-- [ ] Create a held-out validation split
-- [ ] Implement memory-mapped, resumable loading
+- [x] Build offline tokenization and binary sharding
+- [x] Create a held-out validation split
+- [x] Implement memory-mapped, resumable loading
 - [ ] Add mixed precision, AdamW, scheduling, clipping, and accumulation
 - [ ] Add SDPA, compilation, experiment logging, and profiling
 - [ ] Implement complete checkpoint-and-resume
