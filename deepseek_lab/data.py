@@ -1,6 +1,6 @@
 import numpy as np
 from pathlib import Path
-
+import torch
 #Dataset Sharding so data doesn't have to all sit in one file.
 class ShardWriter:
     def __init__(self, shard_size, output_dir):
@@ -53,12 +53,14 @@ class ShardWriter:
         self.flush()
 
 class ShardDataLoader:
-    def __init__(self, data_dir, batch_size, sequence_length, split):
+    def __init__(self, data_dir, batch_size, sequence_length, split, seed=None):
         self.position = 0
         self.current_shard = 0
         self.batch_size = batch_size
         self.sequence_length = sequence_length
         self.file_path = Path(data_dir)
+        self.epoch = 0
+        self.rng = np.random.default_rng(seed)
 
         if (split not in ["train", "val"]):
             raise ValueError("Split needs to be train or val")
@@ -72,7 +74,9 @@ class ShardDataLoader:
 
         if not self.shards:
             raise ValueError("No shards found")
-        
+
+        if self.split == "train":
+            self.rng.shuffle(self.shards)
         self._load_shard(0)
 
     def _load_shard(self, shard_index):
@@ -89,3 +93,17 @@ class ShardDataLoader:
             self.tokens = np.memmap(shard_file, dtype=np.uint16, offset=1024, shape=(int(token_count),), mode="r")
         self.current_shard = shard_index
         self.position = 0
+
+    def next_batch(self):
+        batch = self.batch_size * self.sequence_length + 1
+        while (len(self.tokens) - self.position < batch):
+            self._load_shard((self.current_shard + 1) % len(self.shards))
+            
+        window = self.tokens[self.position: self.position + batch]
+        inputs = torch.tensor(window[:len(window)-1], dtype=torch.long).reshape(self.batch_size, self.sequence_length)
+        outputs = torch.tensor(window[1:], dtype=torch.long).reshape(self.batch_size, self.sequence_length)
+        self.position += batch - 1
+
+        return inputs, outputs
+
+
