@@ -55,28 +55,35 @@ val_state = val.state_dict()
 optimizer = configure_optimizer(model)
 loss_fn = nn.CrossEntropyLoss()
 
-def train_step():
+def train_step(accumulation_steps=1):
+    if (accumulation_steps <= 0):
+        raise ValueError("Accumulation steps should be positive")
+    
     model.train()
-    # Takes a batch of data and sends it to GPU
-    inputs, targets = train.next_batch()
-    inputs = inputs.to(device)
-    targets = targets.to(device)
-
     optimizer.zero_grad()
-    with torch.autocast(device_type= "cuda", dtype=torch.bfloat16):
-        logits = model(inputs)
-
-        #Reshaping logits and targets for loss function
-        logits = logits.reshape([512,50257])
-        targets = targets.flatten()
-        loss = loss_fn(logits, targets)
+    running_loss = 0
     max_norm = 1.0
+    # Takes a batch of data and sends it to GPU
+    for _ in range(accumulation_steps):
+        inputs, targets = train.next_batch()
+        inputs = inputs.to(device)
+        targets = targets.to(device)
 
-    loss.backward()
+        with torch.autocast(device_type= "cuda", dtype=torch.bfloat16):
+            logits = model(inputs)
+
+            #Reshaping logits and targets for loss function
+            logits = logits.reshape([512,50257])
+            targets = targets.flatten()
+            batch_loss = loss_fn(logits, targets)
+            running_loss += batch_loss.item()
+            scaled_loss = batch_loss / accumulation_steps
+
+        scaled_loss.backward()
     original_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm) #Gradient clipping 
     optimizer.step()
-
-    return loss.item(), original_norm.item()
+    average_loss = running_loss / accumulation_steps
+    return average_loss, original_norm.item()
 
 def evaluate(steps):
     if steps <= 0:
@@ -103,11 +110,11 @@ def evaluate(steps):
     model.train()
     return running_loss / steps
 
-def run_training(steps, checkpoint_intervals=200):
+def run_training(steps, accumulation_steps=1, start_step=1, checkpoint_intervals=200):
     running_loss = 0.0
     latest_val_loss = None
     latest_avg_loss = None
-    progress = trange(1, steps + 1, desc="Training", unit="step")
+    progress = trange(start_step, steps + 1, initial=start_step -1, total = steps, desc="Training", unit="step")
 
     for step in progress:
         #Updating the learning rate for each paramater group
@@ -115,7 +122,7 @@ def run_training(steps, checkpoint_intervals=200):
         for param in optimizer.param_groups:
             param["lr"] = lr
 
-        step_loss, original_norm = train_step()
+        step_loss, original_norm = train_step(accumulation_steps)
 
         #Saving the state in training for resuming training
         if(step % checkpoint_intervals == 0 or step == steps):
@@ -156,7 +163,7 @@ def save_checkpoint(path, step):
     checkpoint = {
         "model_state" : model.state_dict(),
         "optimizer_state" : optimizer.state_dict(),
-        "training_loader_state" : train.state_dict(),
+        "train_loader_state" : train.state_dict(),
         "global_step" : step,
         "CPU_RNG_state" : torch.get_rng_state(),
         "CUDA_RNG_state": torch.cuda.get_rng_state_all(),
@@ -168,4 +175,22 @@ def save_checkpoint(path, step):
     torch.save(checkpoint, temp_path)
     temp_path.replace(final_path)
 
-run_training(1000)
+def load_checkpoint(path):
+    checkpoint = torch.load(path, map_location="cpu", weights_only=True)
+    model.load_state_dict(checkpoint["model_state"])
+    optimizer.load_state_dict(checkpoint["optimizer_state"])
+    train.load_state_dict(checkpoint["train_loader_state"])
+    step = checkpoint["global_step"]
+    torch.set_rng_state(checkpoint["CPU_RNG_state"])
+    torch.cuda.set_rng_state_all(checkpoint["CUDA_RNG_state"])
+
+    return step
+
+
+if __name__ == "__main__":
+    saved_step = load_checkpoint("checkpoints/latest.pt")
+    run_training(
+        saved_step + 10,
+        start_step=saved_step + 1,
+        accumulation_steps=4,
+    )
