@@ -5,8 +5,75 @@ from modelforge.data import ShardDataLoader
 from tqdm import trange
 import math 
 from pathlib import Path
+from dataclasses import dataclass
 
-def configure_optimizer(model):
+@dataclass
+class TrainingConfig():
+    #Model State
+    hidden_dim: int = 128
+    num_heads: int = 4
+    sequence_length: int = 128
+    batch_size: int = 4
+    intermediate_dim: int = 512
+    vocab_size : int =  50257
+    num_layers : int = 4
+
+    #Training parameters
+    data_path : str = "data/fineweb_smoke"
+    seed : int = 10
+    min_lr : float = 3e-5
+    max_lr: float = 3e-4
+    weight_decay : float = 0.01
+    warmup_steps : int = 100
+    max_grad_norm : float = 1.0
+    accumulation_steps: int = 4
+    total_steps : int = 1120
+
+    # Other (helps to log metrics)
+    log_interval : int = 10
+    eval_interval : int = 20
+    eval_steps : int = 5
+    checkpoint_interval : int = 200
+    checkpoint_path : str = "checkpoints/latest.pt"
+
+    def __post_init__(self):
+        if self.num_heads <= 0:
+            raise ValueError("num_heads is nonpositive")
+        if self.hidden_dim <= 0:
+            raise ValueError("hidden_dim is nonpositive")
+        if self.batch_size <= 0:
+            raise ValueError("batch_size is nonpositive")
+        if self.sequence_length <= 0:
+            raise ValueError("sequence_length is nonpositive")
+        if self.max_lr <= 0:
+            raise ValueError("max_lr is nonpositive")
+        if self.weight_decay < 0:
+            raise ValueError("weight_decay is negative")
+        if self.hidden_dim % self.num_heads != 0:
+            raise ValueError("hidden_dim must be divisible by num_heads")
+        if self.min_lr > self.max_lr or self.min_lr <= 0:
+            raise ValueError("min_lr not in range of [0, max_lr]")
+        if (self.warmup_steps <= 0 or self.warmup_steps >= self.total_steps):
+            raise ValueError("warmup_steps not in range of [0, total_steps]")
+        if (self.max_grad_norm <= 0):
+            raise ValueError("max_grad_norm is nonpositive")
+        if (self.log_interval <= 0):
+            raise ValueError("log_interval is nonpositive")
+        if (self.eval_interval <= 0):
+            raise ValueError("eval_interval is nonpositive")
+        if (self.eval_steps <= 0):
+            raise ValueError("eval_steps is nonpositive")
+        if (self.accumulation_steps <= 0):
+            raise ValueError("accumulation_steps is nonpositive")
+        if (self.total_steps <= 0):
+            raise ValueError("total_steps is nonpositive")
+        if (self.checkpoint_interval <= 0):
+            raise ValueError("checkpoint_interval is nonpositive")
+
+
+config = TrainingConfig()
+
+def configure_optimizer(model, config):
     decay = []
     no_decay = []
     for name, param in model.named_parameters():
@@ -29,42 +96,48 @@ def configure_optimizer(model):
     optimzer_groups = [
         {
             "params": decay,
-            "weight_decay": 0.01,
+            "weight_decay": config.weight_decay,
         },
         {
             "params": no_decay,
             "weight_decay": 0.0,
-
         }
     ]
-    return torch.optim.AdamW(optimzer_groups, lr=3e-4)
+    return torch.optim.AdamW(optimzer_groups, lr=config.max_lr)
 
 
 device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 if (not torch.cuda.is_bf16_supported() or not torch.cuda.is_available()):
     raise RuntimeError("No GPU or BF16 supported")
 
-torch.manual_seed(10)
-model = Model(128, 4, 128, 512, 50257, 4)
+torch.manual_seed(config.seed)
+model = Model(
+    config.hidden_dim,
+    config.num_heads,
+    config.sequence_length,
+    config.intermediate_dim,
+    config.vocab_size,
+    config.num_layers
+              )
 model.to(device)
 
-train = ShardDataLoader("data/fineweb_smoke", 4, 128, "train", 10)
-val = ShardDataLoader("data/fineweb_smoke", 4, 128, "val", 10)
+train = ShardDataLoader(config.data_path, config.batch_size, config.sequence_length, "train", config.seed)
+val = ShardDataLoader(config.data_path, config.batch_size, config.sequence_length, "val", config.seed)
 val_state = val.state_dict()
 
-optimizer = configure_optimizer(model)
+optimizer = configure_optimizer(model, config)
 loss_fn = nn.CrossEntropyLoss()
 
-def train_step(accumulation_steps=1):
-    if (accumulation_steps <= 0):
+def train_step(config):
+    if (config.accumulation_steps <= 0):
         raise ValueError("Accumulation steps should be positive")
     
     model.train()
     optimizer.zero_grad()
     running_loss = 0
-    max_norm = 1.0
+    max_norm = config.max_grad_norm
     # Takes a batch of data and sends it to GPU
-    for _ in range(accumulation_steps):
+    for _ in range(config.accumulation_steps):
         inputs, targets = train.next_batch() #Both are[B, S]
         inputs = inputs.to(device)
         targets = targets.to(device)
@@ -77,13 +150,13 @@ def train_step(accumulation_steps=1):
             targets = targets.flatten()
             batch_loss = loss_fn(logits, targets)
             running_loss += batch_loss.item()
-            scaled_loss = batch_loss / accumulation_steps
+            scaled_loss = batch_loss / config.accumulation_steps
 
         scaled_loss.backward()
 
     original_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm) #Gradient clipping 
     optimizer.step()
-    average_loss = running_loss / accumulation_steps
+    average_loss = running_loss / config.accumulation_steps
     return average_loss, original_norm.item()
 
 def evaluate(steps):
@@ -111,32 +184,32 @@ def evaluate(steps):
     model.train()
     return running_loss / steps
 
-def run_training(steps, accumulation_steps=1, start_step=1, checkpoint_intervals=200):
+def run_training(config, start_step=1):
     running_loss = 0.0
     latest_val_loss = None
     latest_avg_loss = None
-    progress = trange(start_step, steps + 1, initial=start_step -1, total = steps, desc="Training", unit="step")
+    progress = trange(start_step, config.total_steps + 1, initial=start_step -1, total = config.total_steps, desc="Training", unit="step")
 
     for step in progress:
         #Updating the learning rate for each paramater group
-        lr = scheduler(step, steps)
+        lr = scheduler(step, config)
         for param in optimizer.param_groups:
             param["lr"] = lr
 
-        step_loss, original_norm = train_step(accumulation_steps)
+        step_loss, original_norm = train_step(config)
 
         #Saving the state in training for resuming training
-        if(step % checkpoint_intervals == 0 or step == steps):
-            save_checkpoint(Path(f"checkpoints/latest.pt"), step)
+        if(step % config.checkpoint_interval == 0 or step == config.total_steps):
+            save_checkpoint(config.checkpoint_path, step)
 
         #Calculating loss metrics
         running_loss += step_loss
-        if step % 10 == 0:
-            latest_avg_loss = running_loss / 10
+        if step % config.log_interval == 0:
+            latest_avg_loss = running_loss / config.log_interval
             running_loss = 0.0
 
-        if step % 20 == 0:
-            latest_val_loss = evaluate(5)
+        if step % config.eval_interval == 0:
+            latest_val_loss = evaluate(config.eval_steps)
 
         metrics = {
             "gradient_norm": f"{original_norm:.4f}",
@@ -149,16 +222,16 @@ def run_training(steps, accumulation_steps=1, start_step=1, checkpoint_intervals
 
         progress.set_postfix(metrics)
 
-def scheduler(current_step, total_steps, warmup_steps=100, max_lr = 3e-4, min_lr=3e-5):
-    if current_step <= warmup_steps:
-        return current_step * (max_lr / warmup_steps)
-    elif current_step >= total_steps:
-        return min_lr
+def scheduler(current_step, config):
+    if current_step <= config.warmup_steps:
+        return current_step * (config.max_lr / config.warmup_steps)
+    elif current_step >= config.total_steps:
+        return config.min_lr
     else:
         #Cosine decay
-        decay_progress = (current_step - warmup_steps) / (total_steps - warmup_steps)
+        decay_progress = (current_step - config.warmup_steps) / (config.total_steps - config.warmup_steps)
         coefficient = 0.5 * (1 + math.cos(math.pi * decay_progress))
-        return min_lr + coefficient * (max_lr - min_lr)
+        return config.min_lr + coefficient * (config.max_lr - config.min_lr)
 
 def save_checkpoint(path, step):
     checkpoint = {
@@ -189,9 +262,5 @@ def load_checkpoint(path):
 
 
 if __name__ == "__main__":
-    saved_step = load_checkpoint("checkpoints/latest.pt")
-    run_training(
-        saved_step + 10,
-        start_step=saved_step + 1,
-        accumulation_steps=4,
-    )
+    saved_step = load_checkpoint(config.checkpoint_path)
+    run_training(config, start_step=saved_step + 1)

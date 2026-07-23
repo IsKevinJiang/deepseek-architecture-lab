@@ -1,4 +1,5 @@
 import copy
+from dataclasses import replace
 from pathlib import Path
 from tempfile import TemporaryDirectory
 
@@ -44,27 +45,35 @@ def assert_state_equal(expected, actual, path="state"):
         raise AssertionError(f"Value mismatch at {path}: {expected!r} != {actual!r}")
 
 
-def run_steps(start_step, end_step, total_steps, warmup_steps):
+def run_steps(start_step, end_step, config):
     metrics = []
     for step in range(start_step, end_step + 1):
-        learning_rate = training.scheduler(
-            step,
-            total_steps,
-            warmup_steps=warmup_steps,
-        )
+        learning_rate = training.scheduler(step, config)
         for group in training.optimizer.param_groups:
             group["lr"] = learning_rate
 
-        loss, gradient_norm = training.train_step()
+        loss, gradient_norm = training.train_step(config)
         metrics.append((loss, gradient_norm, learning_rate))
     return metrics
 
 
-def verify_resume(total_steps=12, split_step=6, warmup_steps=4):
+def verify_resume(
+    total_steps=12,
+    split_step=6,
+    warmup_steps=4,
+    accumulation_steps=4,
+):
     if not 0 < split_step < total_steps:
         raise ValueError("split_step must be between zero and total_steps")
     if not 0 < warmup_steps < total_steps:
         raise ValueError("warmup_steps must be between zero and total_steps")
+
+    test_config = replace(
+        training.config,
+        total_steps=total_steps,
+        warmup_steps=warmup_steps,
+        accumulation_steps=accumulation_steps,
+    )
 
     checkpoint_root = Path("checkpoints")
     checkpoint_root.mkdir(parents=True, exist_ok=True)
@@ -75,7 +84,7 @@ def verify_resume(total_steps=12, split_step=6, warmup_steps=4):
         # Both experiments begin from this exact model, optimizer, loader, and RNG state.
         training.save_checkpoint(checkpoint_path, step=0)
 
-        uninterrupted_metrics = run_steps(1, total_steps, total_steps, warmup_steps)
+        uninterrupted_metrics = run_steps(1, total_steps, test_config)
         uninterrupted_model = clone_to_cpu(training.model.state_dict())
         uninterrupted_optimizer = clone_to_cpu(training.optimizer.state_dict())
         uninterrupted_loader = clone_to_cpu(training.train.state_dict())
@@ -87,11 +96,11 @@ def verify_resume(total_steps=12, split_step=6, warmup_steps=4):
         if initial_step != 0:
             raise AssertionError(f"Expected initial step 0, received {initial_step}")
 
-        resumed_prefix = run_steps(1, split_step, total_steps, warmup_steps)
+        resumed_prefix = run_steps(1, split_step, test_config)
         training.save_checkpoint(checkpoint_path, step=split_step)
 
         # Mutate every live state before loading to prove restoration is doing real work.
-        run_steps(split_step + 1, split_step + 1, total_steps, warmup_steps)
+        run_steps(split_step + 1, split_step + 1, test_config)
         torch.rand(8)
         torch.rand(8, device=training.device)
 
@@ -104,8 +113,7 @@ def verify_resume(total_steps=12, split_step=6, warmup_steps=4):
         resumed_suffix = run_steps(
             restored_step + 1,
             total_steps,
-            total_steps,
-            warmup_steps,
+            test_config,
         )
         resumed_metrics = resumed_prefix + resumed_suffix
 
@@ -149,7 +157,8 @@ def verify_resume(total_steps=12, split_step=6, warmup_steps=4):
     print(
         "Resume verification passed: "
         f"{total_steps} uninterrupted updates exactly matched "
-        f"{split_step} + {total_steps - split_step} resumed updates."
+        f"{split_step} + {total_steps - split_step} resumed updates "
+        f"with {accumulation_steps} accumulation steps."
     )
 
 
