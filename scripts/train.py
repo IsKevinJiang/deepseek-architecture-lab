@@ -3,6 +3,7 @@ import torch.nn as nn
 from modelforge.model import Model
 from modelforge.data import ShardDataLoader
 from tqdm import trange
+import math 
 
 def configure_optimizer(model):
     decay = []
@@ -68,10 +69,13 @@ def train_step():
         logits = logits.reshape([512,50257])
         targets = targets.flatten()
         loss = loss_fn(logits, targets)
+    max_norm = 1.0
+
     loss.backward()
+    original_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm) #Gradient clipping 
     optimizer.step()
 
-    return loss.item()
+    return loss.item(), original_norm.item()
 
 def evaluate(steps):
     if steps <= 0:
@@ -101,28 +105,45 @@ def evaluate(steps):
 def run_training(steps):
     running_loss = 0.0
     latest_val_loss = None
-
+    latest_avg_loss = None
     progress = trange(1, steps + 1, desc="Training", unit="step")
 
     for step in progress:
-        step_loss = train_step()
+        lr = scheduler(step, steps)
+        for param in optimizer.param_groups:
+            param["lr"] = lr
+
+        step_loss, original_norm = train_step()
         running_loss += step_loss
 
         if step % 10 == 0:
-            average_loss = running_loss / 10
+            latest_avg_loss = running_loss / 10
             running_loss = 0.0
 
         if step % 20 == 0:
             latest_val_loss = evaluate(5)
 
         metrics = {
-            "train_loss": f"{step_loss:.4f}",
+            "gradient_norm": f"{original_norm:.4f}",
             "lr": f"{optimizer.param_groups[0]['lr']:.2e}",
         }
-
+        if latest_avg_loss is not None:
+            metrics["average_loss"] = f"{latest_avg_loss:.4f}"
         if latest_val_loss is not None:
             metrics["val_loss"] = f"{latest_val_loss:.4f}"
 
         progress.set_postfix(metrics)
+
+def scheduler(current_step, total_steps, warmup_steps=100, max_lr = 3e-4, min_lr=3e-5):
+    if current_step <= warmup_steps:
+        return current_step * (max_lr / warmup_steps)
+    elif current_step >= total_steps:
+        return min_lr
+    else:
+        #Cosine decay
+        decay_progress = (current_step - warmup_steps) / (total_steps - warmup_steps)
+        coefficient = 0.5 * (1 + math.cos(math.pi * decay_progress))
+        return min_lr + coefficient * (max_lr - min_lr)
+
     
-run_training(10000)
+run_training(1000)
