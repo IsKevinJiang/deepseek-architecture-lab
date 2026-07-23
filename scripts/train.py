@@ -4,6 +4,7 @@ from modelforge.model import Model
 from modelforge.data import ShardDataLoader
 from tqdm import trange
 import math 
+from pathlib import Path
 
 def configure_optimizer(model):
     decay = []
@@ -102,20 +103,26 @@ def evaluate(steps):
     model.train()
     return running_loss / steps
 
-def run_training(steps):
+def run_training(steps, checkpoint_intervals=200):
     running_loss = 0.0
     latest_val_loss = None
     latest_avg_loss = None
     progress = trange(1, steps + 1, desc="Training", unit="step")
 
     for step in progress:
+        #Updating the learning rate for each paramater group
         lr = scheduler(step, steps)
         for param in optimizer.param_groups:
             param["lr"] = lr
 
         step_loss, original_norm = train_step()
-        running_loss += step_loss
 
+        #Saving the state in training for resuming training
+        if(step % checkpoint_intervals == 0 or step == steps):
+            save_checkpoint(Path(f"checkpoints/latest.pt"), step)
+
+        #Calculating loss metrics
+        running_loss += step_loss
         if step % 10 == 0:
             latest_avg_loss = running_loss / 10
             running_loss = 0.0
@@ -145,5 +152,20 @@ def scheduler(current_step, total_steps, warmup_steps=100, max_lr = 3e-4, min_lr
         coefficient = 0.5 * (1 + math.cos(math.pi * decay_progress))
         return min_lr + coefficient * (max_lr - min_lr)
 
-    
+def save_checkpoint(path, step):
+    checkpoint = {
+        "model_state" : model.state_dict(),
+        "optimizer_state" : optimizer.state_dict(),
+        "training_loader_state" : train.state_dict(),
+        "global_step" : step,
+        "CPU_RNG_state" : torch.get_rng_state(),
+        "CUDA_RNG_state": torch.cuda.get_rng_state_all(),
+    }
+    final_path = Path(path)
+    final_path.parent.mkdir(parents=True, exist_ok=True)
+
+    temp_path = final_path.with_suffix(final_path.suffix + ".tmp")
+    torch.save(checkpoint, temp_path)
+    temp_path.replace(final_path)
+
 run_training(1000)
