@@ -1,6 +1,6 @@
 import torch.nn as nn
-from deepseek_lab.normalization import RMSNorm
-from deepseek_lab.transformer_block import TransformerBlock
+from modelforge.normalization import RMSNorm
+from modelforge.transformer_block import TransformerBlock
 
 class Model(nn.Module):
     def __init__(self, hidden_dim, num_heads, max_seq_len, intermediate_dim, vocab_size, num_layers):

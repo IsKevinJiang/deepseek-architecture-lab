@@ -1,10 +1,10 @@
 import pytest
 import torch
 
-from deepseek_lab.feed_forward import SwiGLU
-from deepseek_lab.multi_head_attention import MHA
-from deepseek_lab.normalization import RMSNorm
-from deepseek_lab.transformer_block import TransformerBlock
+from modelforge.feed_forward import SwiGLU
+from modelforge.multi_head_attention import MHA
+from modelforge.normalization import RMSNorm
+from modelforge.transformer_block import TransformerBlock
 
 
 def test_transformer_block_preserves_shape_with_default_offset():

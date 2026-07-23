@@ -1,0 +1,2 @@
+Need a shard writer and shard data loader.
+The shard writer is used to basically take a dataset and break it up into differnt .bin files to help with trainign without needing the entire dataset to be on RAM. 

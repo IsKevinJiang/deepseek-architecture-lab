@@ -1,6 +1,6 @@
 import torch
 
-from deepseek_lab.normalization import RMSNorm
+from modelforge.normalization import RMSNorm
 
 
 def test_rmsnorm_preserves_shape_and_registers_weight():

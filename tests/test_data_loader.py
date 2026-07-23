@@ -4,7 +4,7 @@ import numpy as np
 import pytest
 import torch
 
-from deepseek_lab.data import ShardDataLoader
+from modelforge.data import ShardDataLoader
 
 
 def write_shard(path, tokens):

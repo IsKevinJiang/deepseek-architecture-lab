@@ -1,7 +1,7 @@
 import torch.nn as nn
-from deepseek_lab.feed_forward import SwiGLU
-from deepseek_lab.normalization import RMSNorm
-from deepseek_lab.multi_head_attention import MHA
+from modelforge.feed_forward import SwiGLU
+from modelforge.normalization import RMSNorm
+from modelforge.multi_head_attention import MHA
 
 class TransformerBlock(nn.Module):
     def __init__(self, hidden_dim, num_heads, max_seq_len, intermediate_dim):

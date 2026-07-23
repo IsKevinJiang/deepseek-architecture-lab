@@ -1,6 +1,6 @@
 import numpy as np
 
-from deepseek_lab.data import ShardWriter
+from modelforge.data import ShardWriter
 
 
 def read_shard(path):

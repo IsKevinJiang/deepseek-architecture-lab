@@ -1,6 +1,6 @@
 import torch
 import torch.nn as nn
-from deepseek_lab.position import RotaryEmbedding
+from modelforge.position import RotaryEmbedding
 
 class MHA(nn.Module):
     def __init__(self, hidden_dim = 512, num_heads = 8, max_seq_len=1024):

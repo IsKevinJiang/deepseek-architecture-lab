@@ -1,6 +1,6 @@
 import tiktoken
 import numpy as np
-from deepseek_lab.data import ShardWriter
+from modelforge.data import ShardWriter
 from datasets import load_dataset
 from tqdm import tqdm
 

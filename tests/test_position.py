@@ -1,7 +1,7 @@
 import pytest
 import torch
 
-from deepseek_lab.position import RotaryEmbedding, rotate_half
+from modelforge.position import RotaryEmbedding, rotate_half
 
 
 def test_rotate_half_matches_known_vector():

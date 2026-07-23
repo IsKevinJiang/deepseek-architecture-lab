@@ -1,5 +1,5 @@
 
-# deepseek-architecture-lab
+# ModelForge
 
 > A from-scratch PyTorch implementation and controlled study of modern decoder-only language-model architecture, training infrastructure, and distributed pretraining.
 

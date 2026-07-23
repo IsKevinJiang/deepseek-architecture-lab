@@ -2,7 +2,7 @@ import pytest
 import torch
 import torch.nn.functional as F
 
-from deepseek_lab.multi_head_attention import MHA
+from modelforge.multi_head_attention import MHA
 
 
 def reference_attention(module, input_tensor, offset=0):

@@ -1,7 +1,7 @@
 import torch
 import torch.nn as nn
 
-from deepseek_lab.model import Model
+from modelforge.model import Model
 
 torch.manual_seed(0)
 

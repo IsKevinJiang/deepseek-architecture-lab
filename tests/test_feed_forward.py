@@ -1,6 +1,6 @@
 import torch
 
-from deepseek_lab.feed_forward import SwiGLU
+from modelforge.feed_forward import SwiGLU
 
 
 def test_swiglu_preserves_leading_dimensions_and_hidden_size():

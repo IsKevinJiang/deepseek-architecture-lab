@@ -2,9 +2,9 @@ import pytest
 import torch
 import torch.nn as nn
 
-from deepseek_lab.model import Model
-from deepseek_lab.normalization import RMSNorm
-from deepseek_lab.transformer_block import TransformerBlock
+from modelforge.model import Model
+from modelforge.normalization import RMSNorm
+from modelforge.transformer_block import TransformerBlock
 
 
 def make_tiny_model():
