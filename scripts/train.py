@@ -65,21 +65,22 @@ def train_step(accumulation_steps=1):
     max_norm = 1.0
     # Takes a batch of data and sends it to GPU
     for _ in range(accumulation_steps):
-        inputs, targets = train.next_batch()
+        inputs, targets = train.next_batch() #Both are[B, S]
         inputs = inputs.to(device)
         targets = targets.to(device)
 
         with torch.autocast(device_type= "cuda", dtype=torch.bfloat16):
-            logits = model(inputs)
+            logits = model(inputs) #[B, S, V]
 
             #Reshaping logits and targets for loss function
-            logits = logits.reshape([512,50257])
+            logits = logits.reshape(-1, logits.size(-1)) # [B x S, V]
             targets = targets.flatten()
             batch_loss = loss_fn(logits, targets)
             running_loss += batch_loss.item()
             scaled_loss = batch_loss / accumulation_steps
 
         scaled_loss.backward()
+
     original_norm = nn.utils.clip_grad_norm_(model.parameters(), max_norm) #Gradient clipping 
     optimizer.step()
     average_loss = running_loss / accumulation_steps
@@ -101,7 +102,7 @@ def evaluate(steps):
                 logits = model(inputs)
 
                 #Reshaping logits and targets for loss function
-                logits = logits.reshape([512,50257])
+                logits = logits.reshape(-1, logits.size(-1))
                 targets = targets.flatten()
                 loss = loss_fn(logits, targets)
 
