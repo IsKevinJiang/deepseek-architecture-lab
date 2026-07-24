@@ -2,8 +2,8 @@ import pytest
 import torch
 
 from modelforge.feed_forward import SwiGLU
-from modelforge.multi_head_attention import MHA
 from modelforge.normalization import RMSNorm
+from modelforge.sdpa_attention import SDPAMHA
 from modelforge.transformer_block import TransformerBlock
 
 
@@ -32,7 +32,7 @@ def test_transformer_block_owns_expected_independent_components():
 
     assert isinstance(block.rmsnorm1, RMSNorm)
     assert isinstance(block.rmsnorm2, RMSNorm)
-    assert isinstance(block.attention, MHA)
+    assert isinstance(block.attention, SDPAMHA)
     assert isinstance(block.swiglu, SwiGLU)
     assert block.rmsnorm1 is not block.rmsnorm2
     assert block.rmsnorm1.weight.data_ptr() != block.rmsnorm2.weight.data_ptr()
