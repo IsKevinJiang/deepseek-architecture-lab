@@ -78,10 +78,21 @@ class TrainingConfig():
 
 
 config = TrainingConfig(
-        total_steps=5000, 
-        checkpoint_path="checkpoints/smoke_5k.pt",
-        run_dir= "runs/smoke_5k",
-        resume_training=False
+    hidden_dim=384,
+    num_heads=6,
+    intermediate_dim=1536,
+    num_layers=6,
+    sequence_length=128,
+    batch_size=4,
+    total_steps=29295,
+    checkpoint_path="checkpoints/fineweb_60m_53m.pt",
+    data_path="data/fineweb_60m",
+    run_dir= "runs/fineweb_60m_53m",
+    resume_training=False,
+    eval_interval=500,
+    eval_steps=50,
+    warmup_steps=600,
+    checkpoint_interval=1000,
     )
 
 def initialize_run(config):

@@ -61,9 +61,9 @@ Training data is used to update model parameters. Validation data is never used 
 
 The validation set must stay fixed across the dense, MLA, and MoE experiments. Otherwise, their validation losses would not be directly comparable.
 
-The current writer assigns the first completed shard to validation and all later shards to training. This is acceptable for an early smoke test, but it is not the preferred design for the full dataset.
+The preparation pipeline assigns each complete document to a split before writing any of its tokens. It hashes the document text with SHA-256 and assigns bucket 0 out of 32 to validation; every other bucket goes to training. Because this rule is deterministic, recreating the dataset assigns the same document to the same split.
 
-For the real dataset, complete documents should be assigned randomly and reproducibly to one split before sharding. A document must never be divided between training and validation. If part of the same document appears in both splits, data leakage can make validation performance look artificially good. Selecting only the first streamed documents can also produce a validation set that is not representative of the full dataset.
+Training and validation use separate `ShardWriter` instances with explicit split names. A long document may span multiple shards, but every one of those shards remains in the document's assigned split. This prevents document-level leakage, which could otherwise make validation performance look artificially good.
 
 ## Memory mapping
 

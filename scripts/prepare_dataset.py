@@ -8,9 +8,9 @@ from pathlib import Path
 import json
 
 enc = tiktoken.get_encoding("gpt2")
-OUTPUT_DIR = Path("data/fineweb_15m")
-TRAIN_TOKEN_TARGET = 15_000_000
-VAL_TOKEN_TARGET = 500_000
+OUTPUT_DIR = Path("data/fineweb_60m")
+TRAIN_TOKEN_TARGET = 60_000_000
+VAL_TOKEN_TARGET = 2_000_000
 SHARD_SIZE = 1_000_000
 MANIFEST_PATH = OUTPUT_DIR / "manifest.json"
 
