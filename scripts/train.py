@@ -5,7 +5,8 @@ from modelforge.data import ShardDataLoader
 from tqdm import trange
 import math 
 from pathlib import Path
-from dataclasses import dataclass
+from dataclasses import dataclass, asdict
+import json
 
 @dataclass
 class TrainingConfig():
@@ -35,6 +36,7 @@ class TrainingConfig():
     eval_steps : int = 5
     checkpoint_interval : int = 200
     checkpoint_path : str = "checkpoints/latest.pt"
+    run_dir: str = "runs/baseline"
 
     #torch.compile (for improved speed)
     compile_model: bool = True
@@ -75,6 +77,23 @@ class TrainingConfig():
 
 
 config = TrainingConfig()
+
+def initialize_run(config):
+    run_path = Path(config.run_dir)
+    run_path.mkdir(parents=True, exist_ok=True)
+
+    config_path = run_path / "config.json"
+    config_data = asdict(config)
+    with config_path.open("w", encoding="utf-8") as file:
+        json.dump(config_data, file, indent=2)
+
+    metrics_path = run_path / "metrics.jsonl"
+    return metrics_path
+
+def append_metrics(metrics_path, record):
+    with metrics_path.open("a", encoding="utf-8") as file:
+        json.dump(record, file)
+        file.write("\n")
 
 def configure_optimizer(model, config):
     decay = []
@@ -187,7 +206,7 @@ def evaluate(steps):
     model.train()
     return running_loss / steps
 
-def run_training(config, start_step=1):
+def run_training(config, metrics_path, start_step=1):
     running_loss = 0.0
     latest_val_loss = None
     latest_avg_loss = None
@@ -200,30 +219,44 @@ def run_training(config, start_step=1):
             param["lr"] = lr
 
         step_loss, original_norm = train_step(config)
-
-        #Saving the state in training for resuming training
-        if(step % config.checkpoint_interval == 0 or step == config.total_steps):
-            save_checkpoint(config.checkpoint_path, step)
+        current_val = None
 
         #Calculating loss metrics
         running_loss += step_loss
         if step % config.log_interval == 0:
             latest_avg_loss = running_loss / config.log_interval
             running_loss = 0.0
-
         if step % config.eval_interval == 0:
             latest_val_loss = evaluate(config.eval_steps)
+            current_val = latest_val_loss
 
         metrics = {
             "gradient_norm": f"{original_norm:.4f}",
             "lr": f"{optimizer.param_groups[0]['lr']:.2e}",
         }
+
         if latest_avg_loss is not None:
             metrics["average_loss"] = f"{latest_avg_loss:.4f}"
         if latest_val_loss is not None:
             metrics["val_loss"] = f"{latest_val_loss:.4f}"
 
+        #Creating jsons for plotting
         progress.set_postfix(metrics)
+        record = {
+            "step" : step,
+            "tokens": config.accumulation_steps * (config.batch_size * config.sequence_length) * step,
+            "train_loss" : step_loss,
+            "val_loss" : current_val,
+            "learning_rate" : lr,
+            "gradient_norm" : original_norm
+        }
+        append_metrics(metrics_path, record)
+
+        #Saving the state in training for resuming training
+        if(step % config.checkpoint_interval == 0 or step == config.total_steps):
+            save_checkpoint(config.checkpoint_path, step)
+
+
 
 def scheduler(current_step, config):
     if current_step <= config.warmup_steps:
@@ -263,9 +296,29 @@ def load_checkpoint(path):
 
     return step
 
+def sync_metrics(metrics_path, saved_step):
+    if not metrics_path.exists():
+        return
+    records = []
+    with metrics_path.open("r", encoding="utf-8") as file:
+        for line in file:
+            if line.strip():
+                metric = json.loads(line)
+                if (metric["step"] <= saved_step):
+                    records.append(metric)
+
+    temp_path = metrics_path.with_suffix(metrics_path.suffix + ".tmp")
+    with temp_path.open("w", encoding="utf-8") as file:
+        for record in records:
+            json.dump(record, file)
+            file.write("\n")
+    temp_path.replace(metrics_path)
 
 if __name__ == "__main__":
     saved_step = load_checkpoint(config.checkpoint_path)
+    metrics_path = initialize_run(config)
+    sync_metrics(metrics_path, saved_step)
+    
     if config.compile_model:
         model.compile()
-    run_training(config, start_step=saved_step + 1)
+    run_training(config, metrics_path, start_step=saved_step + 1)
