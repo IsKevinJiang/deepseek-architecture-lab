@@ -37,6 +37,7 @@ class TrainingConfig():
     checkpoint_interval : int = 200
     checkpoint_path : str = "checkpoints/latest.pt"
     run_dir: str = "runs/baseline"
+    resume_training: bool = False
 
     #torch.compile (for improved speed)
     compile_model: bool = True
@@ -128,27 +129,43 @@ def configure_optimizer(model, config):
     return torch.optim.AdamW(optimzer_groups, lr=config.max_lr)
 
 
-device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-if (not torch.cuda.is_bf16_supported() or not torch.cuda.is_available()):
-    raise RuntimeError("No GPU or BF16 supported")
+def initialize_runtime(config):
+    global device, model, train, val, val_state, optimizer, loss_fn
 
-torch.manual_seed(config.seed)
-model = Model(
-    config.hidden_dim,
-    config.num_heads,
-    config.sequence_length,
-    config.intermediate_dim,
-    config.vocab_size,
-    config.num_layers
-              )
-model.to(device)
+    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
+    if (not torch.cuda.is_bf16_supported() or not torch.cuda.is_available()):
+        raise RuntimeError("No GPU or BF16 supported")
 
-train = ShardDataLoader(config.data_path, config.batch_size, config.sequence_length, "train", config.seed)
-val = ShardDataLoader(config.data_path, config.batch_size, config.sequence_length, "val", config.seed)
-val_state = val.state_dict()
+    torch.manual_seed(config.seed)
+    model = Model(
+        config.hidden_dim,
+        config.num_heads,
+        config.sequence_length,
+        config.intermediate_dim,
+        config.vocab_size,
+        config.num_layers
+    )
+    model.to(device)
 
-optimizer = configure_optimizer(model, config)
-loss_fn = nn.CrossEntropyLoss()
+    train = ShardDataLoader(
+        config.data_path,
+        config.batch_size,
+        config.sequence_length,
+        "train",
+        config.seed,
+    )
+    val = ShardDataLoader(
+        config.data_path,
+        config.batch_size,
+        config.sequence_length,
+        "val",
+        config.seed,
+    )
+    val_state = val.state_dict()
+
+    optimizer = configure_optimizer(model, config)
+    loss_fn = nn.CrossEntropyLoss()
+
 
 def train_step(config):
     if (config.accumulation_steps <= 0):
@@ -315,7 +332,21 @@ def sync_metrics(metrics_path, saved_step):
     temp_path.replace(metrics_path)
 
 if __name__ == "__main__":
-    saved_step = load_checkpoint(config.checkpoint_path)
+    initialize_runtime(config)
+
+    checkpoint_path = Path(config.checkpoint_path)
+    if (config.resume_training):
+        if (checkpoint_path.exists()):
+            saved_step = load_checkpoint(config.checkpoint_path)
+            print(f"Checkpoint: {checkpoint_path} is resuming from {saved_step}")
+        else:
+            raise FileNotFoundError("Checkpoint path not found")
+    else:
+        if (checkpoint_path.exists()):
+            raise FileExistsError("Checkpoint already exists")
+        else:
+            saved_step = 0
+            print(f"Fresh Training Loop is Starting at {checkpoint_path}")
     metrics_path = initialize_run(config)
     sync_metrics(metrics_path, saved_step)
     

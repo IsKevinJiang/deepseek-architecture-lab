@@ -68,6 +68,8 @@ def verify_resume(
     if not 0 < warmup_steps < total_steps:
         raise ValueError("warmup_steps must be between zero and total_steps")
 
+    training.initialize_runtime(training.config)
+
     test_config = replace(
         training.config,
         total_steps=total_steps,
