@@ -36,6 +36,9 @@ class TrainingConfig():
     checkpoint_interval : int = 200
     checkpoint_path : str = "checkpoints/latest.pt"
 
+    #torch.compile (for improved speed)
+    compile_model: bool = True
+
     def __post_init__(self):
         if self.num_heads <= 0:
             raise ValueError("num_heads is nonpositive")
@@ -263,4 +266,6 @@ def load_checkpoint(path):
 
 if __name__ == "__main__":
     saved_step = load_checkpoint(config.checkpoint_path)
+    if config.compile_model:
+        model.compile()
     run_training(config, start_step=saved_step + 1)
