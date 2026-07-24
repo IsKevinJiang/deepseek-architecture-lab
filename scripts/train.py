@@ -77,7 +77,12 @@ class TrainingConfig():
             raise ValueError("checkpoint_interval is nonpositive")
 
 
-config = TrainingConfig()
+config = TrainingConfig(
+        total_steps=5000, 
+        checkpoint_path="checkpoints/smoke_5k.pt",
+        run_dir= "runs/smoke_5k",
+        resume_training=False
+    )
 
 def initialize_run(config):
     run_path = Path(config.run_dir)
@@ -346,7 +351,7 @@ if __name__ == "__main__":
             raise FileExistsError("Checkpoint already exists")
         else:
             saved_step = 0
-            print(f"Fresh Training Loop is Starting at {checkpoint_path}")
+            print(f"Fresh training loop is starting at {checkpoint_path}")
     metrics_path = initialize_run(config)
     sync_metrics(metrics_path, saved_step)
     

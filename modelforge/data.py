@@ -3,13 +3,17 @@ from pathlib import Path
 import torch
 #Dataset Sharding so data doesn't have to all sit in one file.
 class ShardWriter:
-    def __init__(self, shard_size, output_dir):
+    def __init__(self, shard_size, output_dir, split):
+        if split not in ["train", "val"]:
+            raise ValueError("split must be either 'train' or 'val'")
+
         self.shard_size = shard_size
         self.position = 0
         self.buffer = np.empty(shard_size, dtype=np.uint16)
         self.shard_index = 0
         self.output_dir = Path(output_dir)
         self.output_dir.mkdir(parents=True, exist_ok=True)
+        self.split = split
 
     def add(self, tokens):
         token_position = 0
@@ -32,17 +36,13 @@ class ShardWriter:
     def flush(self):
         if self.position == 0:
             return
-        if self.shard_index == 0:
-            split = "val"
-        else:
-            split = "train"
 
         header = np.zeros(256, np.int32)
         header[0] = 20240520
         header[1] = 1
         header[2] = self.position
 
-        filename = self.output_dir / f"dataset_{split}_{self.shard_index:06d}.bin"
+        filename = self.output_dir / f"dataset_{self.split}_{self.shard_index:06d}.bin"
         with open(filename, "wb") as file:
             file.write(header.tobytes())
             file.write(self.buffer[:self.position].tobytes())
@@ -152,6 +152,5 @@ class ShardDataLoader:
 
         self.epoch = state["epoch"]
         self.rng.bit_generator.state = state["rng_state"]
-
 
 
